@@ -42,7 +42,7 @@
 - stdin 冲突参数守卫
 - Bash `set -u` 下空数组稳定性
 - `--output-format` 参数校验
-- context 管道输入与 `--prompt` 拼接行为
+- context 输入时的 TASK/CONTEXT stdin 拼装与短指令调用行为
 - `EPERM` 认证失败提示
 
 运行方式：

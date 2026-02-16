@@ -67,13 +67,17 @@ teardown() {
   [[ "${output}" == *"Invalid --output-format"* ]]
 }
 
-@test "pipes context to stdin and prompt via --prompt" {
+@test "pipes combined task/context stdin with short instruction" {
   run "${SCRIPT}" --prompt-file "${PROMPT_FILE}" --context-file "${CONTEXT_FILE}" --output-format text
   [ "${status}" -eq 0 ]
 
   gemini_log="$(cat "${FAKE_GEMINI_LOG}")"
-  [[ "${gemini_log}" == *"--prompt prompt-text"* ]]
-  [[ "${gemini_log}" == *"STDIN:context-body"* ]]
+  [[ "${gemini_log}" == *"Use the task and context provided in stdin."* ]]
+  [[ "${gemini_log}" != *"--prompt"* ]]
+  [[ "${gemini_log}" == *"STDIN:TASK:"* ]]
+  [[ "${gemini_log}" == *"prompt-text"* ]]
+  [[ "${gemini_log}" == *"CONTEXT:"* ]]
+  [[ "${gemini_log}" == *"context-body"* ]]
 }
 
 @test "prints actionable hint for EPERM auth failure" {

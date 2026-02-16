@@ -33,7 +33,7 @@ gemini --help
 
 3) 调用 `gemini`（优先用 one-shot）
 - 轻量 prompt：直接用 positional prompt
-- 需要带长上下文：把上下文放在 prompt 里，或用 stdin + `--prompt`（注意：`--prompt` 在 CLI 帮助里标记为 deprecated，但当前版本可用）
+- 需要带长上下文：优先用 stdin 承载上下文，避免把超长 prompt 直接放在命令参数里；用短指令引导 Gemini 从 stdin 读取任务与上下文
 
 4) 保存“输入/输出”以便可复现
 - 至少保存：prompt、gemini 输出（最好加上时间戳文件名）
@@ -56,10 +56,10 @@ gemini --output-format text "在不改变行为的前提下，帮我把下面的
 gemini --output-format json "请输出结构化结果：{结论, 问题列表, 建议, 风险}"
 ```
 
-### 带上下文：stdin + prompt（当前版本可用，但 `--prompt` 标记为 deprecated）
+### 带上下文：stdin + 短指令
 
 ```bash
-cat CONTEXT.txt | gemini --output-format text --prompt "请基于以上上下文做 review，并输出：结论/问题/建议/风险"
+cat CONTEXT.txt | gemini --output-format text -p "Use stdin context to output: 结论/问题/建议/风险"
 ```
 
 ## Bundled Scripts

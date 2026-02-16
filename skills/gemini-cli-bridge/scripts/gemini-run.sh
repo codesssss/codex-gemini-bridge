@@ -10,8 +10,9 @@ Usage:
 
 Notes:
   - Requires `gemini` on PATH.
-  - If --context-file is provided, the script pipes context to stdin and appends prompt via `--prompt`.
-    (`--prompt` is deprecated in gemini CLI help, but available in current versions.)
+  - If --context-file is provided, the script sends a combined stdin payload:
+      TASK:\n<prompt>\n\nCONTEXT:\n<context>
+    and uses a short positional instruction to avoid long prompt args.
   - `--prompt-file -` and `--context-file -` cannot be used together because both consume stdin.
 USAGE
 }
@@ -41,6 +42,19 @@ HINT
   fi
 }
 
+emit_context_payload() {
+  local context_path="$1"
+  local prompt_text="$2"
+
+  printf 'TASK:\n%s\n\nCONTEXT:\n' "${prompt_text}"
+  if [[ "${context_path}" == "-" ]]; then
+    cat -
+  else
+    cat "${context_path}"
+  fi
+  printf '\n'
+}
+
 prompt_file=""
 context_file=""
 out_file=""
@@ -49,6 +63,7 @@ model=""
 extra_args=()
 prompt=""
 stderr_tmp=""
+stdin_instruction="Use the task and context provided in stdin. Return only the final answer."
 
 cleanup() {
   if [[ -n "${stderr_tmp}" && -f "${stderr_tmp}" ]]; then
@@ -127,20 +142,16 @@ if (( ${#extra_args[@]} > 0 )); then
   cmd+=("${extra_args[@]}")
 fi
 
-if [[ -n "${context_file}" ]]; then
-  # Explicitly use --prompt so the stdin behavior is well-defined for current gemini CLI.
-  cmd+=(--prompt "${prompt}")
-fi
-
 stderr_tmp="$(mktemp -t gemini-run-stderr.XXXXXX)"
 
 set +e
 if [[ -n "${context_file}" ]]; then
+  cmd_with_instruction=("${cmd[@]}" "${stdin_instruction}")
   if [[ -n "${out_file}" ]]; then
-    cat "${context_file}" | "${cmd[@]}" 2>"${stderr_tmp}" | tee "${out_file}"
+    emit_context_payload "${context_file}" "${prompt}" | "${cmd_with_instruction[@]}" 2>"${stderr_tmp}" | tee "${out_file}"
     rc=${PIPESTATUS[1]}
   else
-    cat "${context_file}" | "${cmd[@]}" 2>"${stderr_tmp}"
+    emit_context_payload "${context_file}" "${prompt}" | "${cmd_with_instruction[@]}" 2>"${stderr_tmp}"
     rc=${PIPESTATUS[1]}
   fi
 else
