@@ -81,3 +81,18 @@ echo "请把下面的段落改写得更专业（输出 Markdown）" > /tmp/promp
 echo "请对下面的 diff 做 review，输出：结论/问题清单(按严重程度)/建议改动/风险" > /tmp/prompt.txt
 git diff | ./skills/gemini-cli-bridge/scripts/gemini-run.sh --prompt-file /tmp/prompt.txt --context-file - --output-format text
 ```
+
+## 约束与故障排查
+
+1) stdin 占用约束
+- `--prompt-file -` 与 `--context-file -` 不能同时使用（两者都要读 stdin，脚本会拒绝并退出）。
+
+2) 受限环境（沙箱/CI）
+- 若出现 `listen EPERM: operation not permitted 0.0.0.0`：通常是 OAuth 回调监听端口受限。
+- 处理方式：在非受限终端先完成 `gemini` 登录，或在允许网络与本地监听的环境执行。
+
+3) 网络/DNS
+- 若出现 `oauth2.googleapis.com ... ENOTFOUND`：检查网络、DNS 或代理配置后重试。
+
+4) 版本兼容
+- `--prompt` 已在 CLI help 中标记 deprecated，未来可能移除；建议优先使用 positional prompt 的 one-shot 调用。

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
   gemini-run.sh --prompt-file PROMPT.txt [--context-file CONTEXT.txt] [--out OUT.txt] [--output-format text|json|stream-json] [--model MODEL] [-- EXTRA_GEMINI_ARGS...]
   cat PROMPT.txt | gemini-run.sh --prompt-file - [--context-file CONTEXT.txt ...]
@@ -10,9 +10,35 @@ Usage:
 
 Notes:
   - Requires `gemini` on PATH.
-  - If --context-file is provided, the script will pipe context to stdin and use `--prompt` to append the prompt.
+  - If --context-file is provided, the script pipes context to stdin and appends prompt via `--prompt`.
     (`--prompt` is deprecated in gemini CLI help, but available in current versions.)
-EOF
+  - `--prompt-file -` and `--context-file -` cannot be used together because both consume stdin.
+USAGE
+}
+
+print_known_error_hints() {
+  local stderr_path="$1"
+
+  if grep -q "listen EPERM: operation not permitted 0.0.0.0" "${stderr_path}"; then
+    cat >&2 <<'HINT'
+Hint: Gemini CLI attempted browser-based OAuth callback but the current environment blocked opening a local listen socket.
+Action: run outside sandbox / with elevated permissions, or complete `gemini` login in a non-restricted terminal first.
+HINT
+  fi
+
+  if grep -q "oauth2.googleapis.com" "${stderr_path}" && grep -q "ENOTFOUND" "${stderr_path}"; then
+    cat >&2 <<'HINT'
+Hint: Network/DNS cannot reach oauth2.googleapis.com.
+Action: check outbound network policy, proxy, or DNS configuration before retrying.
+HINT
+  fi
+
+  if grep -q "Cached credentials are not valid" "${stderr_path}"; then
+    cat >&2 <<'HINT'
+Hint: Cached Gemini credentials are invalid.
+Action: re-run `gemini` login flow in an environment with browser/network access.
+HINT
+  fi
 }
 
 prompt_file=""
@@ -21,6 +47,15 @@ out_file=""
 output_format="text"
 model=""
 extra_args=()
+prompt=""
+stderr_tmp=""
+
+cleanup() {
+  if [[ -n "${stderr_tmp}" && -f "${stderr_tmp}" ]]; then
+    rm -f "${stderr_tmp}"
+  fi
+}
+trap cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,8 +83,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! command -v gemini >/dev/null 2>&1; then
-  echo "`gemini` not found on PATH." >&2
+  echo "'gemini' not found on PATH." >&2
   exit 127
+fi
+
+case "${output_format}" in
+  text|json|stream-json)
+    ;;
+  *)
+    echo "Invalid --output-format: ${output_format}. Expected one of: text|json|stream-json" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "${prompt_file}" == "-" && "${context_file}" == "-" ]]; then
+  echo "Invalid args: --prompt-file - and --context-file - cannot both read stdin." >&2
+  exit 2
 fi
 
 if [[ -z "${prompt_file}" || ! -f "${prompt_file}" ]]; then
@@ -66,7 +115,7 @@ if [[ -n "${context_file}" && "${context_file}" != "-" && ! -f "${context_file}"
   exit 2
 fi
 
-if [[ -z "${prompt:-}" ]]; then
+if [[ -z "${prompt}" ]]; then
   prompt="$(cat "${prompt_file}")"
 fi
 
@@ -74,21 +123,43 @@ cmd=(gemini --output-format "${output_format}")
 if [[ -n "${model}" ]]; then
   cmd+=(--model "${model}")
 fi
-cmd+=("${extra_args[@]}")
+if (( ${#extra_args[@]} > 0 )); then
+  cmd+=("${extra_args[@]}")
+fi
 
 if [[ -n "${context_file}" ]]; then
   # Explicitly use --prompt so the stdin behavior is well-defined for current gemini CLI.
   cmd+=(--prompt "${prompt}")
+fi
+
+stderr_tmp="$(mktemp -t gemini-run-stderr.XXXXXX)"
+
+set +e
+if [[ -n "${context_file}" ]]; then
   if [[ -n "${out_file}" ]]; then
-    cat "${context_file}" | "${cmd[@]}" | tee "${out_file}"
+    cat "${context_file}" | "${cmd[@]}" 2>"${stderr_tmp}" | tee "${out_file}"
+    rc=${PIPESTATUS[1]}
   else
-    cat "${context_file}" | "${cmd[@]}"
+    cat "${context_file}" | "${cmd[@]}" 2>"${stderr_tmp}"
+    rc=${PIPESTATUS[1]}
   fi
 else
-  # Use positional prompt (preferred by gemini CLI help).
   if [[ -n "${out_file}" ]]; then
-    "${cmd[@]}" "${prompt}" | tee "${out_file}"
+    "${cmd[@]}" "${prompt}" 2>"${stderr_tmp}" | tee "${out_file}"
+    rc=${PIPESTATUS[0]}
   else
-    "${cmd[@]}" "${prompt}"
+    "${cmd[@]}" "${prompt}" 2>"${stderr_tmp}"
+    rc=$?
   fi
+fi
+set -e
+
+if [[ -s "${stderr_tmp}" ]]; then
+  cat "${stderr_tmp}" >&2
+fi
+
+if [[ ${rc} -ne 0 ]]; then
+  print_known_error_hints "${stderr_tmp}"
+  echo "gemini command failed with exit code: ${rc}" >&2
+  exit "${rc}"
 fi

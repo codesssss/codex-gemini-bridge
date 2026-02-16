@@ -6,6 +6,7 @@
 
 - `skills/gemini-cli-bridge/`：Skill 本体（`SKILL.md` + 脚本）
 - `scripts/install-skill.sh`：把 Skill 安装到 `~/.codex/skills/`（默认 `CODEX_HOME`）
+- `tests/gemini-run.bats`：`gemini-run.sh` 的最小回归测试
 
 ## 快速开始（本地安装）
 
@@ -34,3 +35,20 @@
 ```bash
 ./skills/gemini-cli-bridge/scripts/gemini-run.sh --help
 ```
+
+## 运行回归测试
+
+本仓库新增了针对 `gemini-run.sh` 的最小回归测试，覆盖：
+- stdin 冲突参数守卫
+- Bash `set -u` 下空数组稳定性
+- `--output-format` 参数校验
+- context 管道输入与 `--prompt` 拼接行为
+- `EPERM` 认证失败提示
+
+运行方式：
+
+```bash
+./scripts/test.sh
+```
+
+如果缺少 `bats`，脚本会提示安装（例如 macOS: `brew install bats-core`）。
